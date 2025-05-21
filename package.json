@@ -1,0 +1,26 @@
+{
+  "name": "hackathon",
+  "version": "1.0.0",
+  "main": "index2.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@google/genai": "^1.0.0",
+    "@google/generative-ai": "^0.24.1",
+    "@langchain/community": "^0.3.43",
+    "@langchain/core": "^0.3.56",
+    "@langchain/langgraph": "^0.2.72",
+    "@langchain/mistralai": "^0.2.0",
+    "@langchain/ollama": "^0.2.0",
+    "axios": "^1.9.0",
+    "dotenv": "^16.5.0",
+    "js-yaml": "^4.1.0",
+    "langchain": "^0.3.26",
+    "openai": "^4.100.0",
+    "zod": "^3.25.13"
+  }
+}
