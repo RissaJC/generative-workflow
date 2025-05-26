@@ -25,115 +25,35 @@ const ollama = new ChatOllama({
   temperature: 0.2, // Keep very low for deterministic tool use
   // format: 'json', // This might interfere with React Agent's output format, usually omitted for React agents
 });
+// import fs from "fs";
+// import { parseStringPromise } from "js-yaml";
 
-// --- 2. Define Custom Tools with EXPLICIT Descriptions and Schemas ---
-
-// Tool for getting system users (GET /systemusers)
-const usersListTool = tool(
-  getSystemUsers,
-  {
-    name: "list_system_users", // Use snake_case for tool names (common convention for agents)
-    description: `Retrieves a paginated list of system users and the total count of users. 
-                  Accepts optional parameters: 'limit' (number, default 100), 
-                  'skip' (number, default 0), 
-                  'sort' (string, e.g., 'username' or '-email' for descending), 
-                  'fields' (string, comma-separated), 
-                  'filter' (array of strings, e.g., 'email:eq:user@example.com'), 
-                  and 'search' (string).
-                  This tool does NOT accept an ID directly. If you need a specific user's details by ID, 
-                  you must first list users and then deduce the ID from the list, or use the 'get_paginated_administrator' tool.
-                  **Crucial for finding an administrator's ID by email or name.**
-                  Accepts optional parameters: 'limit' (number, default 10), 
-                  'skip' (number, default 0), 
-                  'filter' (array of strings, e.g., 'email:eq:lkj@gmail.com' or 'firstname:eq:John'),
-                  and 'search' (string).
-                  `,
-    schema: GetPaginatedListSchema,
+function parseYamlFile(filePath) {
+  try {
+    const yamlContent = fs.readFileSync(filePath, "utf8");
+    return yaml.load(yamlContent); // Parse YAML into a JavaScript object
+  } catch (error) {
+    console.error("Error parsing YAML file:", error.message);
+    throw error;
   }
-);
+}
+const openApiDoc = parseYamlFile("./index.yaml");
+let openApiDocStr = JSON.stringify(openApiDoc, null, 2);
+openApiDocStr = openApiDocStr.replace(/{/g, "{{").replace(/}/g, "}}");
 
-const organizationsListTool = tool(
-  getOrganizations,
-  {
-    name: "get_all_organizations", // Use snake_case for tool names (common convention for agents)
-    description: `Retrieves all organizations and the total count of organizations. 
-                  Accepts optional parameters: 'limit' (number, default 100), 
-                  'skip' (number, default 0), 
-                  This tool does NOT accept an ID directly. If you need a specific orgnaization's details by ID or displayName(name), 
-                  you must first list organizations and then deduce the ID from the list.
-                  if you find multiple results with the given criteria excute the task on all of them
-                  `,
-  }
-);
+// const openApiDocStr = fs.readFileSync("./index.yaml", "utf8").replace(/{/g, "{{").replace(/}/g, "}}");
 
-const giveAdminAccessToOrgTool = tool(
-  giveAdminAccessToOrg,
-  {
-    name: 'give_admin_access_to_organization',
-    description: `gives admin access to organization by providing the admin id and the organization id`,
-    schema: GiveAdminAccessToOrgSchema,
-  }
-)
 
-// Tool for creating an organization (POST /providers/{provider_id}/organizations)
-const createOrgTool = tool(
-  createOrg, // Assuming this function takes { providerId: string, name: string, maxSystemUsers?: number }
-  {
-    name: "create_organization",
-    description: `Creates a new organization under a given provider.
-                  Requires 'name' (string).
-                  Optionally accepts 'maxSystemUsers' (number).
-                  returns the new organization created object including the id.
-                  `,
-    schema: CreateOrgScema, // Zod schema for organization creation input
-  }
-);
-
-// Tool for updating an administrator (PUT /administrators/{id})
-const updateAdministratorTool = tool(
-  updateAdministrator, // Assuming this function takes { id: string, payload: AdministratorSchema }
-  {
-    name: "update_administrator_account",
-    description: `Updates fields for an existing administrator account.
-                  **If you don't have the administrator's ID, you must first use 'get_all_administrators' to find it.**
-                  `,
-    schema: AdministratorSchema, // Zod schema for administrator update input (will be the payload)
-  }
-);
-
-const getAdministratorOrganizationsTool = tool(
-  getAdminOrgnaizations, // Assuming this function takes { id: string, payload: AdministratorSchema }
-  {
-    name: "get_administrator_organizations",
-    description: `gets the list of organizations that the administrator has access to`,
-    schema: GetAdminOrganizations, // Zod schema for administrator update input (will be the payload)
-  }
-);
-
-// Tool for getting a paginated list of administrators (GET /administrators)
-// This is the key tool for getting an admin's ID
-const getPaginatedAdminsTool = tool(
-  getPaginatedAdministrators, // Assuming this function takes { limit?: number, skip?: number, filter?: string[], search?: string }
-  {
-    name: "get_paginated_administrators",
-    description: `Retrieves a paginated list of administrator accounts.
-                  **Crucial for finding an administrator's ID by email or name.**
-                  Accepts optional parameters: 'limit' (number, default 10), 
-                  'skip' (number, default 0), 
-                  'filter' (array of strings, e.g., 'email:eq:lkj@gmail.com' or 'firstname:eq:John'),
-                  and 'search' (string).
-                  `,
-    schema: GetPaginatedListSchema, // Zod schema for administrator list input
-  }
-);
 const runCurlTool = tool(
   async ({ curl }) => {
         console.log("Executing cURL Command:", curl); // Log the cURL command
     return new Promise((resolve, reject) => {
       exec(curl, { maxBuffer: 1024 * 1024 }, (error, stdout, stderr) => {
         if (error) {
+          console.error("Error executing cURL:", stderr || error.message);
           resolve(`Error: ${stderr || error.message}`);
         } else {
+          console.log("cURL Success Output:", stdout);
           resolve(stdout);
         }
       });
@@ -172,60 +92,90 @@ async function initializeAndRun() {
 };
 
 const toolsTextDescription = getToolsTextDescription(tools);
-  // The custom prompt template for the React agent.
-  // It's vital that this structure matches the React agent's expected format.
-  // The placeholders {tools}, {tool_names}, {chat_history}, {input}, {agent_scratchpad}
-  // are automatically filled by LangChain based on the agent type.
-  // const prompt = ChatPromptTemplate.fromMessages([
-  // ["system", `You are a highly capable AI assistant that uses available tools to fulfill user requests.
-    
-  //   Current Date and Time: ${new Date().toLocaleString()} (EEST, Lebanon)
 
-  //   **Your primary goal is to achieve the user's request by calling tools sequentially.**
-  //   **IMPORTANT:**
-  //   1.  If an action requires an ID that you don't have, your first step MUST be to use a 'GET' tool (e.g., 'get_paginated_administrators') to retrieve that ID.
-  //   2.  **NEVER** try to call an 'UPDATE' or 'DELETE' tool with a placeholder like '<administrator_id>'. You must obtain the actual ID from a previous 'GET' tool's 'Observation'.
-  //   3.  **Carefully read the JSON 'Observation' returned by 'GET' tools to extract the necessary ID.**
-  //   4.  Then, use the **extracted actual ID** with the appropriate action tool (e.g., 'update_administrator_account').
-  //   5.  After successfully completing all required actions, provide a clear and concise 'Final Answer' summarizing the outcome.
-  //   6. always wait for a tool resonse before calling the next one.
-  //   `],
-  // new MessagesPlaceholder("chat_history"), // Past messages from memory
-  // ["human", "{input}"], // Current user input
-  // new MessagesPlaceholder("agent_scratchpad")
-  // ]);
-const openApiDocStr = fs.readFileSync("./index.yaml", "utf8").replace(/{/g, "{{").replace(/}/g, "}}");
-
-function preprocessOpenApiSpec(filePath) {
-  const fileContent = fs.readFileSync("./index.yaml", "utf8").replace(/{/g, "{{").replace(/}/g, "}}");
-  const openApiDoc = yaml.load(fileContent);
-
-  // Extract key details (e.g., endpoints and methods)
-  const endpoints = Object.keys(openApiDoc.paths).map(path => {
-    const methods = Object.keys(openApiDoc.paths[path]);
-    return { path, methods };
-  });
-
-  // console.log("Context Passed to AI:", { endpoints });
-  return endpoints;
-}
-// console.log("OpenAPI Doc String:", openApiDocStr); // Log the OpenAPI doc string for debugging
-const openApiEndpoints = preprocessOpenApiSpec("./index.yaml");
 const prompt = ChatPromptTemplate.fromMessages([
-  ["system", `You are a highly capable AI assistant that checks the API docs, gather the required information from user
-    creates the accurately formatted cURL and uses the tool to run the cURL and show the response to the user.
+  ["system", `You are a highly capable AI assistant that checks the OpenAPI documentation, extracts the required information, and generates valid cURL commands and executes them using run_curl tool.
 
-  Here is the list of available endpoints from the OpenAPI specification:`+ JSON.stringify(openApiDocStr) +`
+  **Here is the OpenAPI specification:**
+  yaml
+/organizations:
+    get:
+      summary: List All Organizations
+      description: This endpoint returns all Organizations accessible by the API key. For MTP admins, this could be the primary organization or all managed organizations depending on the API key's scope and if x-org-id is used.
+      operationId: organizations_list_all
+      tags:
+        - Organizations
+      parameters:
+        - $ref: '#/parameters/trait:fields:fields'
+        - $ref: '#/parameters/trait:filter:filter'
+        - $ref: '#/parameters/trait:limit:limit'
+        - $ref: '#/parameters/trait:skip:skip'
+        - $ref: '#/parameters/trait:sort:sort'
+        - $ref: '#/parameters/trait:multiTenantRequestHeaders:x-org-id'
+      responses:
+        '200':
+          description: A list of organizations.
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Organization'
+      security:
+        - x-api-key: []
+    post:
+      summary: create an organization
+      description: This endpoint creates a new organization.
+      tags:
+        - Organizations
+      parameters:
+        - $ref: '#/parameters/trait:fields:fields'
+        - $ref: '#/parameters/trait:filter:filter'
+        - $ref: '#/parameters/trait:limit:limit'
+        - $ref: '#/parameters/trait:skip:skip'
+        - $ref: '#/parameters/trait:sort:sort'
+        - $ref: '#/parameters/trait:multiTenantRequestHeaders:x-org-id'
+      responses:
+        '200':
+          schema:
+            type: array
+            items:
+              $ref: '#/definitions/Organization'
+      security:
+        - x-api-key: []
+/systemusers:
+    get:
+        summary: List All System Users
+        parameters:
+            - $ref: '#/parameters/trait:fields:fields'
+            - $ref: '#/parameters/trait:filter:filter'
+            - $ref: '#/parameters/trait:limit:limit'
+            - $ref: '#/parameters/trait:skip:skip'
+            - $ref: '#/parameters/trait:sort:sort'
+            - $ref: '#/parameters/trait:multiTenantRequestHeaders:x-org-id' #default is 
+        security:
+        - x-api-key: []
 
-  **Your primary goal is to achieve the user's request by referencing the OpenAPI spec.**
+
+
+  **Your primary goal is to:**
+  1. Parse the OpenAPI spec to understand the available endpoints, parameters, and required fields.
+  2. Use the user's input to identify the correct endpoint and construct a valid cURL command.
+  3. Ensure the cURL command includes:
+     - The correct HTTP method (e.g., GET, POST, PUT).
+     - The correct endpoint URL.
+     - Required headers (e.g., 'x-api-key').
+     - A valid JSON payload if needed (for POST/PUT requests).
+
   **DATA**
   Base URL: ${API_BASE_URL}
-  API Key: ${API_KEY} Add this to headers as 'x-api-key'
-  Provider ID: ${PROVIDER_ID} 
+  API Key: ${API_KEY} (Add this to headers as 'x-api-key')
+  Provider ID: ${PROVIDER_ID}
+
   **IMPORTANT:**
-  1. Use the OpenAPI spec to understand endpoints, parameters, and required fields.
+  1. Always validate the user's request against the OpenAPI spec.
   2. If the user asks for available endpoints, list them based on the OpenAPI spec.
-  3. Provide clear and concise responses.`],
+  3. If the user's request is invalid or unclear, ask for clarification.
+  4. Provide clear and concise responses.
+  5. Use correct endpoints and parameters as per the OpenAPI spec. Do not make assumptions.`],
   new MessagesPlaceholder("chat_history"),
   ["human", "{input}"],
   new MessagesPlaceholder("agent_scratchpad")
